@@ -1,19 +1,15 @@
-@import "tailwindcss";
+:root {
+  --accent-primary: #E11D48;
+  --accent-glow: rgba(225, 29, 72, 0.35);
+  --accent-subtle: rgba(225, 29, 72, 0.15);
+  --accent-border: rgba(225, 29, 72, 0.4);
+}
 
-@layer base {
-  :root {
-    --accent-primary: #E11D48;
-    --accent-glow: rgba(225, 29, 72, 0.35);
-    --accent-subtle: rgba(225, 29, 72, 0.15);
-    --accent-border: rgba(225, 29, 72, 0.4);
-  }
-
-  body {
-    font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-feature-settings: "ss01" on, "tnum" on;
-    background-color: #09090b;
-    color: #f4f4f5;
-  }
+body {
+  font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-feature-settings: "ss01" on, "tnum" on;
+  background-color: #09090b;
+  color: #f4f4f5;
 }
 
 .font-mono {
@@ -53,9 +49,11 @@
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #09090b;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #27272a;
   border-radius: 9999px;

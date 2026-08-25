@@ -156,3 +156,11 @@ export function createInitialSystemState(): {
     userProfile
   };
 }
+export const GUEST_USER_PROFILE: UserProfile = {
+  id: 'guest',
+  name: 'کاربر مهمان',
+  email: 'guest@bushido.app',
+  role: 'GUEST',
+  isVip: false,
+  createdAt: new Date().toISOString()
+};

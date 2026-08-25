@@ -1,19 +1,23 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Cycle, DailyLog, SystemSettings, UserProfile } from './types';
-import { createInitialSystemState } from './data/initialData';
+import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Cycle, DailyLog, SystemSettings, UserProfile, AdminUserItem } from './types';
+import { createInitialSystemState, GUEST_USER_PROFILE, DEFAULT_ADMIN_USER_PROFILE } from './data/initialData';
 import { computeCycleMetrics } from './engine/bushidoCalculations';
 import { getLogicalTodayDate, addDaysToDate } from './utils/dateUtils';
 import { applyAccentTheme } from './utils/themeUtils';
 import { Navbar } from './components/Navbar';
 import { BattlefieldView } from './components/BattlefieldView';
-import { CycleDashboardView } from './components/CycleDashboardView';
-import { ArchivesView } from './components/ArchivesView';
-import { ProfileSettingsView } from './components/ProfileSettingsView';
 import { AutopsyModal } from './components/AutopsyModal';
 import { PaymentModal } from './components/PaymentModal';
 import { AuthModal } from './components/AuthModal';
-import { AdminView } from './components/AdminView';
-import { RotateCcw, CheckCircle2, AlertTriangle, X } from 'lucide-react';
+import { ViewLoadingSkeleton } from './components/ViewLoadingSkeleton';
+import { RotateCcw, CheckCircle2, AlertTriangle, X, Eye, ShieldCheck } from 'lucide-react';
+
+// 2026 High Performance Code-Splitting / Lazy Loading for heavy views
+const CycleDashboardView = lazy(() => import('./components/CycleDashboardView').then(m => ({ default: m.CycleDashboardView })));
+const ArchivesView = lazy(() => import('./components/ArchivesView').then(m => ({ default: m.ArchivesView })));
+const ProfileSettingsView = lazy(() => import('./components/ProfileSettingsView').then(m => ({ default: m.ProfileSettingsView })));
+const AdminView = lazy(() => import('./components/AdminView').then(m => ({ default: m.AdminView })));
 
 const STORAGE_KEY = 'bushido_discipline_os_v1';
 const TOKEN_KEY = 'bushido_auth_token';
@@ -26,6 +30,9 @@ export default function App() {
       return null;
     }
   });
+
+  const [impersonatingUser, setImpersonatingUser] = useState<AdminUserItem | null>(null);
+  const [impersonatorAdminToken, setImpersonatorAdminToken] = useState<string | null>(null);
 
   const [systemState, setSystemState] = useState<{
     cycles: Cycle[];
@@ -102,6 +109,43 @@ export default function App() {
     applyAccentTheme(theme);
   }, [systemState]);
 
+  // Auto-login to Admin on first fresh session if no token and not explicitly logged out
+  useEffect(() => {
+    const initDefaultAdminIfNeeded = async () => {
+      const currentToken = localStorage.getItem(TOKEN_KEY);
+      const isExplicitLogout = sessionStorage.getItem('bushido_explicit_logout') === 'true';
+      if (!currentToken && !isExplicitLogout) {
+        try {
+          const res = await fetch('/api/auth/quick-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: 'admin' })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.token && data.user) {
+              localStorage.setItem(TOKEN_KEY, data.token);
+              setAuthToken(data.token);
+              setSystemState(prev => ({
+                ...prev,
+                userProfile: {
+                  ...prev.userProfile,
+                  ...data.user,
+                  isVip: Boolean(data.user.isVip),
+                  isAdmin: Boolean(data.user.isAdmin)
+                }
+              }));
+            }
+          }
+        } catch (err) {
+          console.warn('Auto admin login fallback:', err);
+        }
+      }
+    };
+
+    initDefaultAdminIfNeeded();
+  }, []);
+
   // Fetch user profile and backend data on mount or token change
   useEffect(() => {
     const fetchBackendData = async () => {
@@ -122,12 +166,13 @@ export default function App() {
                 userProfile: {
                   ...prev.userProfile,
                   ...userData.user,
-                  isVip: !!userData.user.isVip
+                  isVip: !!userData.user.isVip,
+                  isAdmin: !!userData.user.isAdmin
                 }
               }));
             }
           } else {
-            // Token expired
+            // Token expired or invalid
             localStorage.removeItem(TOKEN_KEY);
             setAuthToken(null);
           }
@@ -379,26 +424,133 @@ export default function App() {
   };
 
   const handleAuthSuccess = (token: string, user: UserProfile) => {
+    sessionStorage.removeItem('bushido_explicit_logout');
     localStorage.setItem(TOKEN_KEY, token);
     setAuthToken(token);
     setSystemState(prev => ({
       ...prev,
       userProfile: user
     }));
+    showAppToast(`با موفقیت وارد حساب «${user.name || 'کاربر'}» شدید.`);
+  };
+
+  const handleQuickLogin = async (role: 'admin' | 'test_user') => {
+    try {
+      sessionStorage.removeItem('bushido_explicit_logout');
+      const res = await fetch('/api/auth/quick-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role })
+      });
+      const data = await res.json();
+      if (res.ok && data.token && data.user) {
+        localStorage.setItem(TOKEN_KEY, data.token);
+        setAuthToken(data.token);
+        setSystemState(prev => ({
+          ...prev,
+          userProfile: {
+            ...prev.userProfile,
+            ...data.user,
+            isVip: Boolean(data.user.isVip),
+            isAdmin: Boolean(data.user.isAdmin)
+          }
+        }));
+        showAppToast(role === 'admin' ? 'به عنوان مدیر ارشد سیستم وارد شدید.' : 'به عنوان کاربر تستی وارد شدید.');
+      } else {
+        showAppToast(data.error || 'خطا در ورود سریع');
+      }
+    } catch (e) {
+      console.error('Quick login error:', e);
+      showAppToast('خطا در برقراری ارتباط');
+    }
+  };
+
+  const handleImpersonateUser = async (targetUser: AdminUserItem) => {
+    try {
+      const currentToken = authToken || localStorage.getItem(TOKEN_KEY);
+      if (!currentToken) return;
+
+      const res = await fetch('/api/admin/impersonate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentToken}`
+        },
+        body: JSON.stringify({ targetUserId: targetUser.id })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.token && data.user) {
+        setImpersonatorAdminToken(currentToken);
+        setImpersonatingUser(targetUser);
+        localStorage.setItem(TOKEN_KEY, data.token);
+        setAuthToken(data.token);
+        setSystemState(prev => ({
+          ...prev,
+          userProfile: {
+            ...prev.userProfile,
+            ...data.user,
+            isVip: Boolean(data.user.isVip),
+            isAdmin: Boolean(data.user.isAdmin)
+          }
+        }));
+        setActiveTab('battlefield');
+        showAppToast(`در حال شبیه‌سازی و مشاهده سامانه از دید: «${data.user.name}»`);
+      } else {
+        showAppToast(data.error || 'خطا در سوییچ به کاربر');
+      }
+    } catch (e) {
+      console.error('Impersonate user error:', e);
+      showAppToast('خطا در برقراری ارتباط با سرور');
+    }
+  };
+
+  const handleExitImpersonation = async () => {
+    if (!impersonatorAdminToken) return;
+    try {
+      localStorage.setItem(TOKEN_KEY, impersonatorAdminToken);
+      setAuthToken(impersonatorAdminToken);
+      setImpersonatingUser(null);
+      const res = await fetch('/api/auth/me', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${impersonatorAdminToken}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          setSystemState(prev => ({
+            ...prev,
+            userProfile: {
+              ...prev.userProfile,
+              ...data.user,
+              isVip: Boolean(data.user.isVip),
+              isAdmin: Boolean(data.user.isAdmin)
+            }
+          }));
+        }
+      }
+      setImpersonatorAdminToken(null);
+      setActiveTab('admin');
+      showAppToast('به حساب مدیریت بازگشتید.');
+    } catch (e) {
+      console.error('Exit impersonation error:', e);
+    }
   };
 
   const handleLogout = () => {
     localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.setItem('bushido_explicit_logout', 'true');
     setAuthToken(null);
+    setImpersonatingUser(null);
+    setImpersonatorAdminToken(null);
     setSystemState(prev => ({
       ...prev,
-      userProfile: {
-        ...createInitialSystemState().userProfile,
-        isVip: false,
-        tier: 'free'
-      }
+      userProfile: GUEST_USER_PROFILE
     }));
     setIsAuthModalOpen(false);
+    showAppToast('با موفقیت از حساب کاربری خارج شدید.');
   };
 
   if (!currentCycle || !cycleMetrics) {
@@ -411,6 +563,30 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col selection:bg-amber-500 selection:text-black pb-20 lg:pb-8">
+      {/* Top Banner when Admin is Impersonating a User */}
+      {impersonatingUser && (
+        <div className="bg-sky-950 border-b border-sky-500/50 py-2.5 px-4 sticky top-0 z-50 shadow-2xl backdrop-blur-md">
+          <div className="max-w-7xl w-full mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs">
+            <div className="flex items-center gap-2 text-sky-200 font-bold">
+              <Eye className="w-4 h-4 text-sky-400 animate-pulse shrink-0" />
+              <span>
+                حالت شبیه‌سازی کاربر: در حال بررسی سامانه از دید «{impersonatingUser.name}»
+              </span>
+              <span className="text-[10px] bg-sky-900/80 text-sky-300 border border-sky-500/40 px-2 py-0.5 rounded-md font-mono hidden md:inline-block">
+                {impersonatingUser.id}
+              </span>
+            </div>
+            <button
+              onClick={handleExitImpersonation}
+              className="bg-sky-500 hover:bg-sky-400 text-zinc-950 font-black text-xs px-3.5 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-md shrink-0 active:scale-95"
+            >
+              <ShieldCheck className="w-4 h-4 text-zinc-950" />
+              <span>بازگشت به حساب مدیریت</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Hub Bar */}
       <Navbar
         activeTab={activeTab}
@@ -443,104 +619,151 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-6 pb-20 sm:pb-8">
-        {activeTab === 'battlefield' && (
-          <BattlefieldView
-            currentCycle={currentCycle}
-            metrics={cycleMetrics}
-            logs={systemState.logs}
-            selectedDate={selectedDate}
-            nightOwlCutoffHour={systemState.userProfile?.nightOwlCutoffHour ?? systemState.settings?.nightOwlCutoffHour ?? 4}
-            onSelectDate={handleSelectDate}
-            onUpdateLog={handleUpdateLog}
-            onOpenAutopsy={log => setAutopsyTargetLog(log)}
-            onNavigateToArchives={() => setActiveTab('archives')}
-          />
-        )}
+        <Suspense fallback={<ViewLoadingSkeleton />}>
+          <AnimatePresence mode="wait">
+            {activeTab === 'battlefield' && (
+              <motion.div
+                key="battlefield"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+              >
+                <BattlefieldView
+                  currentCycle={currentCycle}
+                  metrics={cycleMetrics}
+                  logs={systemState.logs}
+                  selectedDate={selectedDate}
+                  nightOwlCutoffHour={systemState.userProfile?.nightOwlCutoffHour ?? systemState.settings?.nightOwlCutoffHour ?? 4}
+                  onSelectDate={handleSelectDate}
+                  onUpdateLog={handleUpdateLog}
+                  onOpenAutopsy={log => setAutopsyTargetLog(log)}
+                  onNavigateToArchives={() => setActiveTab('archives')}
+                />
+              </motion.div>
+            )}
 
-        {(activeTab === 'dashboard' || activeTab === 'cycle') && (
-          <CycleDashboardView
-            currentCycle={currentCycle}
-            metrics={cycleMetrics}
-            logs={systemState.logs}
-            cycles={systemState.cycles}
-            allTimeSettings={{
-              allTimeMaxStreak: systemState.settings?.allTimeMaxStreak ?? 0,
-              allTimeMaxScore: systemState.settings?.allTimeMaxScore ?? 0,
-              allTimeMaxStandardDays: systemState.settings?.allTimeMaxStandardDays ?? 0,
-            }}
-            onSelectDate={d => {
-              handleSelectDate(d);
-              setActiveTab('battlefield');
-            }}
-            onNavigateTab={tab => setActiveTab(tab)}
-          />
-        )}
+            {(activeTab === 'dashboard' || activeTab === 'cycle') && (
+              <motion.div
+                key="dashboard"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+              >
+                <CycleDashboardView
+                  currentCycle={currentCycle}
+                  metrics={cycleMetrics}
+                  logs={systemState.logs}
+                  cycles={systemState.cycles}
+                  allTimeSettings={{
+                    allTimeMaxStreak: systemState.settings?.allTimeMaxStreak ?? 0,
+                    allTimeMaxScore: systemState.settings?.allTimeMaxScore ?? 0,
+                    allTimeMaxStandardDays: systemState.settings?.allTimeMaxStandardDays ?? 0,
+                  }}
+                  onSelectDate={d => {
+                    handleSelectDate(d);
+                    setActiveTab('battlefield');
+                  }}
+                  onNavigateTab={tab => setActiveTab(tab)}
+                />
+              </motion.div>
+            )}
 
-        {(activeTab === 'archives' || activeTab === 'database' || activeTab === 'court') && (
-          <ArchivesView
-            cycles={systemState.cycles}
-            currentCycle={currentCycle}
-            logs={systemState.logs}
-            metrics={cycleMetrics}
-            onSelectCycle={c => setActiveCycleId(c.id)}
-            onUpdateCycle={handleUpdateCycle}
-            onDeleteCycle={handleDeleteCycle}
-            onSelectDate={d => {
-              handleSelectDate(d);
-              setActiveTab('battlefield');
-            }}
-            onOpenAutopsy={log => setAutopsyTargetLog(log)}
-            onCreateNewCycle={handleCreateNewCycle}
-          />
-        )}
+            {(activeTab === 'archives' || activeTab === 'database' || activeTab === 'court') && (
+              <motion.div
+                key="archives"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+              >
+                <ArchivesView
+                  cycles={systemState.cycles}
+                  currentCycle={currentCycle}
+                  logs={systemState.logs}
+                  metrics={cycleMetrics}
+                  onSelectCycle={c => setActiveCycleId(c.id)}
+                  onUpdateCycle={handleUpdateCycle}
+                  onDeleteCycle={handleDeleteCycle}
+                  onSelectDate={d => {
+                    handleSelectDate(d);
+                    setActiveTab('battlefield');
+                  }}
+                  onOpenAutopsy={log => setAutopsyTargetLog(log)}
+                  onCreateNewCycle={handleCreateNewCycle}
+                />
+              </motion.div>
+            )}
 
-        {(activeTab === 'profile' || activeTab === 'settings') && (
-          <ProfileSettingsView
-            userProfile={systemState.userProfile}
-            settings={systemState.settings}
-            onUpdateUserProfile={handleUpdateUserProfile}
-            onUpdateSettings={handleUpdateSettings}
-            onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
-            onOpenAuthModal={() => setIsAuthModalOpen(true)}
-            onLogout={handleLogout}
-            onResetData={handleResetData}
-            onImportData={handleImportData}
-            onExportData={handleExportData}
-            onNavigateToAdmin={() => setActiveTab('admin')}
-          />
-        )}
+            {(activeTab === 'profile' || activeTab === 'settings') && (
+              <motion.div
+                key="profile"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+              >
+                <ProfileSettingsView
+                  userProfile={systemState.userProfile}
+                  settings={systemState.settings}
+                  onUpdateUserProfile={handleUpdateUserProfile}
+                  onUpdateSettings={handleUpdateSettings}
+                  onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
+                  onOpenAuthModal={() => setIsAuthModalOpen(true)}
+                  onQuickLogin={handleQuickLogin}
+                  onLogout={handleLogout}
+                  onResetData={handleResetData}
+                  onImportData={handleImportData}
+                  onExportData={handleExportData}
+                  onNavigateToAdmin={() => setActiveTab('admin')}
+                />
+              </motion.div>
+            )}
 
-        {activeTab === 'admin' && (
-          <AdminView
-            currentUser={systemState.userProfile}
-            authToken={authToken}
-            onBack={() => setActiveTab('profile')}
-            onRefreshUserProfile={() => {
-              if (authToken) {
-                fetch('/api/auth/me', {
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`
-                  }
-                })
-                  .then(r => r.json())
-                  .then(data => {
-                    if (data?.user) {
-                      setSystemState(prev => ({
-                        ...prev,
-                        userProfile: {
-                          ...prev.userProfile,
-                          ...data.user,
-                          isVip: !!data.user.isVip
+            {activeTab === 'admin' && (
+              <motion.div
+                key="admin"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+              >
+                <AdminView
+                  currentUser={systemState.userProfile}
+                  authToken={authToken}
+                  onBack={() => setActiveTab('profile')}
+                  onImpersonateUser={handleImpersonateUser}
+                  onRefreshUserProfile={() => {
+                    if (authToken) {
+                      fetch('/api/auth/me', {
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${authToken}`
                         }
-                      }));
+                      })
+                        .then(r => r.json())
+                        .then(data => {
+                          if (data?.user) {
+                            setSystemState(prev => ({
+                              ...prev,
+                              userProfile: {
+                                ...prev.userProfile,
+                                ...data.user,
+                                isVip: !!data.user.isVip,
+                                isAdmin: !!data.user.isAdmin
+                              }
+                            }));
+                          }
+                        })
+                        .catch(console.error);
                     }
-                  })
-                  .catch(console.error);
-              }
-            }}
-          />
-        )}
+                  }}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </Suspense>
       </main>
 
       {/* Autopsy Drawer/Modal */}

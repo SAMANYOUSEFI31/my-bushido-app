@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { DailyLog, Cycle, CycleMetrics, HabitKey } from '../types';
 import { FOUNDATION_HABITS, computeDailyProperties } from '../engine/bushidoCalculations';
 import { formatPersianDate, getLogicalTodayDate, addDaysToDate, getRelativeDateLabel, daysBetween } from '../utils/dateUtils';
@@ -361,54 +362,83 @@ export const BattlefieldView: React.FC<BattlefieldViewProps> = ({
         </div>
       </div>
 
-      {/* 1.5. Martial Honor Achievement Banner (Crossed Swords ⚔️ & Samurai Seal) */}
-      {martialHonorToast && (
-        <div 
-          className={`rounded-2xl p-4 sm:p-5 border-2 shadow-2xl transition-all duration-300 animate-in fade-in slide-in-from-top-4 backdrop-blur-xl flex items-start sm:items-center justify-between gap-4 ${
-            martialHonorToast.type === 'mastery'
-              ? 'bg-gradient-to-r from-amber-950/90 via-[#121215] to-amber-950/90 border-amber-500 shadow-amber-950/50'
-              : 'bg-gradient-to-r from-emerald-950/90 via-[#121215] to-emerald-950/90 border-emerald-500 shadow-emerald-950/50'
-          }`}
-        >
-          <div className="flex items-center gap-3.5">
-            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
-              martialHonorToast.type === 'mastery'
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-inner'
-                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-inner'
-            }`}>
-              <Swords className="w-6 h-6 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className={`text-base font-black flex items-center gap-1.5 ${
-                  martialHonorToast.type === 'mastery' ? 'text-amber-300' : 'text-emerald-300'
-                }`}>
-                  <Swords className="w-4 h-4" />
-                  <span>{martialHonorToast.title}</span>
-                </h4>
-                <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold font-mono border ${
-                  martialHonorToast.type === 'mastery'
-                    ? 'bg-amber-500/20 text-amber-200 border-amber-500/40'
-                    : 'bg-emerald-500/20 text-emerald-200 border-emerald-500/40'
-                }`}>
-                  {toPersianDigits(martialHonorToast.score)} از ۱۰ امتیاز
-                </span>
-              </div>
-              <p className="text-xs sm:text-sm text-zinc-300 mt-1">
-                {martialHonorToast.subtitle}
-              </p>
-            </div>
-          </div>
+      {/* Swipe navigation hint on mobile */}
+      <div className="flex items-center justify-center gap-1.5 text-[10px] text-zinc-500 select-none pointer-events-none sm:hidden -my-2">
+        <span className="text-zinc-600">‹</span>
+        <span>قابلیت کشیدن انگشت (سویپ) به راست و چپ برای تغییر روزها</span>
+        <span className="text-zinc-600">›</span>
+      </div>
 
-          <button
-            onClick={() => setMartialHonorToast(null)}
-            className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800/80 transition cursor-pointer shrink-0"
-            aria-label="بستن"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+      {/* 1.5. Dynamic Day Content with Swipe Gestures and Smooth Animation */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={selectedDate}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          drag="x"
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.12}
+          onDragEnd={(_, info) => {
+            if (info.offset.x > 60 || info.velocity.x > 300) {
+              soundFX.playCheck();
+              onSelectDate(addDaysToDate(selectedDate, -1));
+            } else if (info.offset.x < -60 || info.velocity.x < -300) {
+              soundFX.playCheck();
+              onSelectDate(addDaysToDate(selectedDate, 1));
+            }
+          }}
+          className="space-y-6 touch-pan-y"
+        >
+          {/* 1.5. Martial Honor Achievement Banner (Crossed Swords ⚔️ & Samurai Seal) */}
+          {martialHonorToast && (
+            <div 
+              className={`rounded-2xl p-4 sm:p-5 border-2 shadow-2xl transition-all duration-300 animate-in fade-in slide-in-from-top-4 backdrop-blur-xl flex items-start sm:items-center justify-between gap-4 ${
+                martialHonorToast.type === 'mastery'
+                  ? 'bg-gradient-to-r from-amber-950/90 via-[#121215] to-amber-950/90 border-amber-500 shadow-amber-950/50'
+                  : 'bg-gradient-to-r from-emerald-950/90 via-[#121215] to-emerald-950/90 border-emerald-500 shadow-emerald-950/50'
+              }`}
+            >
+              <div className="flex items-center gap-3.5">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
+                  martialHonorToast.type === 'mastery'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-inner'
+                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-inner'
+                }`}>
+                  <Swords className="w-6 h-6 animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className={`text-base font-black flex items-center gap-1.5 ${
+                      martialHonorToast.type === 'mastery' ? 'text-amber-300' : 'text-emerald-300'
+                    }`}>
+                      <Swords className="w-4 h-4" />
+                      <span>{martialHonorToast.title}</span>
+                    </h4>
+                    <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold font-mono border ${
+                      martialHonorToast.type === 'mastery'
+                        ? 'bg-amber-500/20 text-amber-200 border-amber-500/40'
+                        : 'bg-emerald-500/20 text-emerald-200 border-emerald-500/40'
+                    }`}>
+                      {toPersianDigits(martialHonorToast.score)} از ۱۰ امتیاز
+                    </span>
+                  </div>
+                  <p className="text-xs sm:text-sm text-zinc-300 mt-1">
+                    {martialHonorToast.subtitle}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setMartialHonorToast(null)}
+                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800/80 transition cursor-pointer shrink-0"
+                aria-label="بستن"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
       {/* 2. Lock & Information Banners (Future / Archived / Past Debt Lock) */}
       {isFuture ? (
@@ -878,6 +908,8 @@ export const BattlefieldView: React.FC<BattlefieldViewProps> = ({
           }`}
         />
       </div>
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 };

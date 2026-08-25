@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile } from '../types';
 import { toPersianDigits, formatPersianNumber } from '../utils/numberUtils';
 import { 
@@ -114,6 +115,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         phoneNumber: data.user.phoneNumber || undefined,
         tier: data.user.tier || 'free',
         isVip: !!data.user.isVip,
+        isAdmin: !!data.user.isAdmin,
         vipSince: data.user.vipSince,
         vipExpiresAt: data.user.vipExpiresAt,
         paymentRefId: data.user.paymentRefId,
@@ -129,11 +131,65 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  const handleQuickLogin = async (role: 'admin' | 'test_user') => {
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      const res = await fetch('/api/auth/quick-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'خطا در ورود سریع');
+      }
+
+      const userProfile: UserProfile = {
+        id: data.user.id,
+        name: data.user.name || (role === 'admin' ? 'فرمانده ارشد سامورایی (مدیر)' : 'کاربر آزمایشی'),
+        email: data.user.email,
+        phoneNumber: data.user.phoneNumber,
+        tier: data.user.tier || (data.user.isVip ? 'vip_samurai' : 'free'),
+        isVip: Boolean(data.user.isVip),
+        isAdmin: Boolean(data.user.isAdmin),
+        vipSince: data.user.vipSince,
+        vipExpiresAt: data.user.vipExpiresAt,
+        paymentRefId: data.user.paymentRefId,
+        activeCycleLimit: data.user.isVip ? 999 : 1
+      };
+
+      onAuthSuccess(data.token, userProfile);
+      onClose();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'خطا در برقراری ارتباط');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4" dir="rtl">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto" dir="rtl">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 15 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 15 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        drag="y"
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0, bottom: 0.3 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.y > 90 || info.velocity.y > 400) {
+            onClose();
+          }
+        }}
+        className="bg-zinc-900 border border-zinc-800 rounded-2xl sm:rounded-3xl w-full max-w-md shadow-2xl overflow-hidden touch-pan-y"
+      >
+        {/* Mobile Drag Pill Indicator */}
+        <div className="w-12 h-1.5 bg-zinc-700/80 rounded-full mx-auto my-2 sm:hidden cursor-grab active:cursor-grabbing shrink-0" />
+
         {/* Header */}
-        <div className="px-6 py-5 border-b border-zinc-800 flex items-center justify-between bg-[#09090b]/60">
+        <div className="px-6 py-4 sm:py-5 border-b border-zinc-800 flex items-center justify-between bg-[#09090b]/60">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center text-black font-black shadow-lg shadow-amber-500/20">
               <KeyRound className="w-5 h-5 text-black" />
@@ -274,6 +330,42 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <p className="text-[11px] text-zinc-500 text-center leading-relaxed">
                     با ورود به سیستم، داده‌های میدان نبرد و چرخه‌های ۹۰ روزه شما به‌صورت کاملاً ایزوله در دیتابیس امن PostgreSQL ذخیره خواهند شد.
                   </p>
+
+                  {/* Quick One-Click Dev & Test Logins */}
+                  <div className="pt-4 border-t border-zinc-800 space-y-2">
+                    <div className="text-[11px] text-zinc-400 font-bold flex items-center justify-between">
+                      <span>ورود سریع برای تست و مدیریت:</span>
+                      <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">کاملاً محلی JWT</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleQuickLogin('admin')}
+                        disabled={isLoading}
+                        className="bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 hover:border-red-500/60 text-red-300 rounded-xl p-2.5 text-right transition cursor-pointer text-xs"
+                      >
+                        <div className="flex items-center gap-1.5 font-bold text-red-300">
+                          <ShieldCheck className="w-3.5 h-3.5 text-red-400" />
+                          <span>ورود به عنوان مدیر</span>
+                        </div>
+                        <span className="text-[10px] text-zinc-400 block mt-0.5">فرمانده ارشد (VIP + Admin)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleQuickLogin('test_user')}
+                        disabled={isLoading}
+                        className="bg-zinc-800/80 hover:bg-zinc-750 border border-zinc-700 text-zinc-200 rounded-xl p-2.5 text-right transition cursor-pointer text-xs"
+                      >
+                        <div className="flex items-center gap-1.5 font-bold text-zinc-200">
+                          <User className="w-3.5 h-3.5 text-amber-400" />
+                          <span>ورود کاربر تستی</span>
+                        </div>
+                        <span className="text-[10px] text-zinc-400 block mt-0.5">مشاهده از دید کاربر</span>
+                      </button>
+                    </div>
+                  </div>
                 </form>
               ) : (
                 /* OTP Verification Step */
@@ -344,7 +436,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };

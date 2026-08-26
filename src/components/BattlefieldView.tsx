@@ -334,18 +334,32 @@ export const BattlefieldView: React.FC<BattlefieldViewProps> = ({
     }
   };
 
-  // Touch swipe gesture handlers (non-blocking for vertical scrolling)
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Touch swipe gesture handlers (smart touch-area: works across entire screen including habit cards)
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const isSwipingRef = useRef<boolean>(false);
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    // Do not trigger swipe when interacting with textarea, inputs, or buttons
+    // Only block swipe on editable inputs/textareas to allow text selection
     const target = e.target as HTMLElement;
-    if (target.closest('textarea, input, button, select, [contenteditable="true"]')) {
+    if (target.closest('textarea, input, [contenteditable="true"]')) {
       touchStartRef.current = null;
       return;
     }
     const touch = e.touches[0];
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    isSwipingRef.current = false;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    const deltaY = touch.clientY - touchStartRef.current.y;
+
+    // If user has clearly started a horizontal swipe (deltaX > 20 and dominant over Y)
+    if (Math.abs(deltaX) > 20 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
+      isSwipingRef.current = true;
+    }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
@@ -353,10 +367,16 @@ export const BattlefieldView: React.FC<BattlefieldViewProps> = ({
     const touch = e.changedTouches[0];
     const deltaX = touch.clientX - touchStartRef.current.x;
     const deltaY = touch.clientY - touchStartRef.current.y;
+    const elapsed = Date.now() - touchStartRef.current.time;
     touchStartRef.current = null;
 
-    // Minimum swipe distance 45px and predominantly horizontal (deltaX > 1.4 * deltaY)
-    if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4) {
+    // Determine if it qualifies as an intentional swipe:
+    // 1. Min distance 40px (or 25px if high-velocity flick within 250ms)
+    // 2. Clear horizontal dominance (deltaX > 1.3 * deltaY)
+    const isQuickFlick = elapsed < 300 && Math.abs(deltaX) > 30;
+    const isStandardSwipe = Math.abs(deltaX) > 45;
+
+    if ((isStandardSwipe || isQuickFlick) && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
       if (deltaX < 0) {
         // Swipe Left -> Next Day in RTL
         navigateDate(addDaysToDate(selectedDate, 1), 1);
@@ -372,6 +392,7 @@ export const BattlefieldView: React.FC<BattlefieldViewProps> = ({
       className="space-y-6 max-w-5xl mx-auto touch-pan-y" 
       dir="rtl"
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
       {/* 1. Fully Responsive Ergonomic Date Navigator Bar (Zero-Overflow on Mobile) */}

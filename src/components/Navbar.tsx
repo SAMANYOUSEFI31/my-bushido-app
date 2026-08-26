@@ -12,6 +12,8 @@ import {
   AlertTriangle, 
   ChevronDown,
   Crown,
+  User,
+  LogIn,
   ShieldCheck,
   Sparkles
 } from 'lucide-react';
@@ -46,7 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isCycleDropdownOpen, setIsCycleDropdownOpen] = useState(false);
   const [adminUnlockToast, setAdminUnlockToast] = useState(false);
 
-  // ۵ بار کلیک سریع روی لوگو برای فعال‌سازی حالت مخفی مدیریت
+  // Secret 5-click counter on brand logo to reveal admin panel / auth
   const clickCountRef = useRef(0);
   const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -72,6 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     }, 2000);
   };
 
+  // Exactly 4 primary user tabs as strictly required
   const mainTabs = [
     { id: 'battlefield', label: 'میدان نبرد', icon: Swords },
     { id: 'dashboard', label: 'اتاق فرماندهی', icon: LayoutDashboard },
@@ -84,13 +87,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
+      {/* Top Hub Bar Header */}
       <header className="sticky top-0 z-40 bg-[#09090b]/95 border-b border-zinc-800/90 backdrop-blur-xl transition-all" dir="rtl">
         <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 sm:h-16 gap-1.5 sm:gap-4">
             
-            {/* Brand & 5-click easter egg */}
+            {/* Brand & Cycle Switcher */}
             <div className="flex items-center gap-2 sm:gap-3.5 min-w-0 shrink">
               <div className="flex items-center gap-2 shrink-0">
+                {/* 5-click easter egg on brand logo */}
                 <button
                   type="button"
                   onClick={handleBrandClick}
@@ -110,7 +115,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               </div>
 
-              {/* Cycle Dropdown */}
+              {/* Cycle Switcher Dropdown */}
               <div className="relative min-w-0">
                 <button 
                   type="button"
@@ -164,7 +169,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             </div>
 
-            {/* Desktop Navigation */}
+            {/* Desktop Navigation Tabs (Exactly 4 Tabs with Spring layoutId indicator) */}
             <nav className="hidden lg:flex items-center gap-1 xl:gap-2">
               {mainTabs.map(tab => {
                 const Icon = tab.icon;
@@ -207,12 +212,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               })}
             </nav>
 
-            {/* Header Right Controls */}
+            {/* User Tier, Auth & Streak Controls */}
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {/* Debt Alert Badge */}
               {metrics.unresolvedDebtCount > 0 && (
                 <button 
                   type="button"
-                  onClick={() => onOpenDebtAutopsy ? onOpenDebtAutopsy() : onSelectTab('battlefield')}
+                  onClick={() => {
+                    if (onOpenDebtAutopsy) {
+                      onOpenDebtAutopsy();
+                    } else {
+                      onSelectTab('battlefield');
+                    }
+                  }}
                   className="h-8 sm:h-9 bg-red-950/80 border border-red-500/60 hover:bg-red-900/90 text-red-300 px-2 sm:px-2.5 rounded-xl text-[10px] sm:text-xs font-bold inline-flex items-center justify-center gap-1 cursor-pointer animate-pulse shrink-0 shadow-md transition"
                   title="کلیک برای کالبدشکافی و تسویه فوری بدهی"
                 >
@@ -222,6 +234,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
+              {/* Pure Streak Flame (Always visible and responsive with permanent Fiery Rose token) */}
               <div 
                 className="h-8 sm:h-9 bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2 sm:px-2.5 rounded-xl inline-flex items-center justify-center gap-1 text-[11px] sm:text-xs font-bold shrink-0"
                 title="تعداد روزهای زنجیره خالص متوالی بدون شکست"
@@ -230,6 +243,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="whitespace-nowrap font-mono">{toPersianDigits(metrics.pureStreak)} روز</span>
               </div>
 
+              {/* VIP Status Badge (If active VIP) */}
               {userProfile.isVip && (
                 <div 
                   onClick={onOpenPaymentModal}
@@ -241,6 +255,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               )}
 
+              {/* Admin Panel Quick Access Button if Admin */}
               {userProfile.isAdmin && (
                 <button
                   type="button"
@@ -256,6 +271,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
+              {/* User Account / Settings Button (Visible on Desktop; Mobile users have the bottom profile tab) */}
               <button
                 type="button"
                 onClick={() => onSelectTab('profile')}
@@ -267,11 +283,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                 title={userProfile?.id ? `حساب و تنظیمات (${userProfile.name})` : 'حساب کاربری و تنظیمات'}
               >
                 <Settings className={`w-4 h-4 ${activeTab === 'profile' ? 'text-amber-400' : 'text-zinc-300'}`} />
+                {!userProfile.isVip && (metrics.elapsedDays >= 30 || metrics.pureStreak >= 7) && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 absolute top-1 right-1 animate-pulse" />
+                )}
               </button>
             </div>
           </div>
         </div>
 
+        {/* Secret admin unlock banner notification */}
         {adminUnlockToast && (
           <div className="bg-amber-950/90 border-t border-b border-amber-500/40 px-4 py-2 text-center text-xs text-amber-200 flex items-center justify-center gap-2 animate-in slide-in-from-top-2">
             <Sparkles className="w-4 h-4 text-amber-400 animate-spin" />
@@ -280,7 +300,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         )}
       </header>
 
-      {/* Mobile Bottom Navigation Bar with Spring layoutId indicator */}
+      {/* Mobile Bottom Navigation Bar (4 clean tabs with spring layoutId active indicator) */}
       <nav 
         className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#09090b]/95 border-t border-zinc-800/90 backdrop-blur-xl px-2 py-1.5 pb-safe"
         dir="rtl"
@@ -297,7 +317,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 key={tab.id}
                 onClick={() => onSelectTab(tab.id)}
                 className={`flex flex-col items-center justify-center py-1 px-1 relative cursor-pointer z-10 transition-colors ${
-                  isActive ? 'font-bold text-white' : 'text-zinc-400 hover:text-zinc-200'
+                  isActive
+                    ? 'font-bold text-white'
+                    : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
                 <div className="relative px-3 py-1 flex items-center justify-center">

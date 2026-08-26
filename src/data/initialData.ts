@@ -1,6 +1,31 @@
 import { Cycle, DailyLog, SystemSettings, UserProfile } from '../types';
 import { addDaysToDate, formatDateISO, getLogicalTodayDate } from '../utils/dateUtils';
 
+export const GUEST_USER_PROFILE: UserProfile = {
+  id: '',
+  name: 'کاربر مهمان (وارد نشده)',
+  email: '',
+  phoneNumber: '',
+  tier: 'free',
+  isVip: false,
+  isAdmin: false,
+  activeCycleLimit: 1
+};
+
+export const DEFAULT_ADMIN_USER_PROFILE: UserProfile = {
+  id: 'admin-master-001',
+  name: 'فرمانده ارشد سامورایی (مدیر)',
+  email: 'admin@bushido.app',
+  phoneNumber: '09120000000',
+  tier: 'vip_samurai',
+  isVip: true,
+  isAdmin: true,
+  vipSince: new Date(Date.now() - 25 * 86400000).toISOString(),
+  vipExpiresAt: new Date(Date.now() + 65 * 86400000).toISOString(),
+  paymentRefId: 'REF-78942150',
+  activeCycleLimit: 99
+};
+
 export function createInitialSystemState(): {
   cycles: Cycle[];
   logs: DailyLog[];
@@ -156,11 +181,3 @@ export function createInitialSystemState(): {
     userProfile
   };
 }
-export const GUEST_USER_PROFILE: UserProfile = {
-  id: 'guest',
-  name: 'کاربر مهمان',
-  email: 'guest@bushido.app',
-  role: 'GUEST',
-  isVip: false,
-  createdAt: new Date().toISOString()
-};
